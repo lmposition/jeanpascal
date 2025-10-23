@@ -21,6 +21,8 @@ export interface Review {
   reviewDate: string;
   createdAt: string;
   gameUrl?: string; // URL vers la page Steam Store du jeu
+  isPosted?: boolean; // Indique si l'avis a été posté sur Discord
+  retryCount?: number; // Nombre de tentatives de publication
 }
 
 export interface SteamGame {

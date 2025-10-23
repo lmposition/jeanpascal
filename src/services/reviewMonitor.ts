@@ -52,6 +52,7 @@ export class ReviewMonitor {
       this.isRunning = true;
       try {
         await this.checkForNewReviews();
+        await this.retryUnpostedReviews();
       } catch (error) {
         console.error('Error in review monitor:', error);
       } finally {
@@ -102,6 +103,35 @@ export class ReviewMonitor {
         // Délai entre chaque notification
         await this.delay(1000);
       }
+    }
+  }
+
+  private async retryUnpostedReviews(): Promise<void> {
+    try {
+      const unpostedReviews = this.db.getUnpostedReviews(3); // Max 3 tentatives
+      
+      if (unpostedReviews.length === 0) {
+        return;
+      }
+      
+      console.log(`🔄 Tentative de réenvoi de ${unpostedReviews.length} avis non postés...`);
+      
+      for (const review of unpostedReviews) {
+        // Récupérer l'utilisateur associé
+        const user = this.db.getUserById(review.userId);
+        if (!user) {
+          console.error(`❌ Utilisateur introuvable pour l'avis ${review.id}`);
+          continue;
+        }
+        
+        console.log(`🔄 Retry ${(review.retryCount || 0) + 1}/3 pour: ${review.title} by ${user.platformUsername}`);
+        await this.sendReviewNotification(user, review);
+        
+        // Délai entre chaque tentative
+        await this.delay(2000);
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du retry des avis non postés:', error);
     }
   }
 
@@ -291,18 +321,26 @@ export class ReviewMonitor {
 
   private async saveReview(user: User, reviewData: any): Promise<Review | null> {
     try {
+      // Pour Letterboxd, reviewText contient le texte traduit (priorité)
+      // Pour Steam et SensCritique, content ou review contient le texte
+      const content = reviewData.reviewText || reviewData.content || reviewData.review || '';
+      
+      console.log(`💾 Sauvegarde avis avec contenu (${content.length} caractères): "${content.substring(0, 50)}..."`);
+      
       const review: Omit<Review, 'id' | 'createdAt'> = {
         userId: user.id,
         platform: user.platform,
         gameId: reviewData.appId?.toString(),
         movieId: reviewData.movieId,
         title: reviewData.title,
-        content: reviewData.content || reviewData.reviewText || reviewData.review || '',
+        content: content,
         rating: reviewData.rating,
         coverImage: reviewData.coverImage,
         reviewUrl: reviewData.reviewUrl,
         reviewDate: reviewData.reviewDate || new Date().toISOString(),
-        gameUrl: reviewData.gameUrl
+        gameUrl: reviewData.gameUrl,
+        isPosted: false, // Par défaut, l'avis n'est pas encore posté
+        retryCount: 0 // Initialiser le compteur de retry
       };
 
       return this.db.addReview(review);
@@ -314,9 +352,13 @@ export class ReviewMonitor {
 
   private async sendReviewNotification(user: User, review: Review): Promise<void> {
     try {
+      console.log(`📤 Envoi notification avec contenu (${review.content.length} caractères): "${review.content.substring(0, 50)}..."`);
+      
       const channel = this.client.channels.cache.get(this.channelId) as TextChannel;
       if (!channel) {
         console.error(`Channel ${this.channelId} not found`);
+        // Incrémenter le compteur de retry
+        this.db.incrementRetryCount(review.id);
         return;
       }
 
@@ -324,14 +366,28 @@ export class ReviewMonitor {
       const embed = this.createReviewEmbed(user, review);
       const actionButtons = this.createActionButtons(user, review);
       
-      await channel.send({ 
+      const message = await channel.send({ 
         embeds: [embed],
         components: [actionButtons]
       });
       
-      console.log(`Sent notification for review: ${review.title} by ${user.platformUsername}`);
+      // Ajouter les réactions automatiquement
+      try {
+        await message.react('👍');
+        await message.react('👎');
+        console.log(`✅ Réactions ajoutées au message`);
+      } catch (reactionError) {
+        console.error('❌ Erreur lors de l\'ajout des réactions:', reactionError);
+      }
+      
+      // Marquer l'avis comme posté
+      this.db.markReviewAsPosted(review.id);
+      
+      console.log(`✅ Notification envoyée pour: ${review.title} by ${user.platformUsername}`);
     } catch (error) {
-      console.error('Error sending review notification:', error);
+      console.error('❌ Erreur lors de l\'envoi de la notification:', error);
+      // Incrémenter le compteur de retry en cas d'erreur
+      this.db.incrementRetryCount(review.id);
     }
   }
 

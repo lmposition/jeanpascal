@@ -51,11 +51,25 @@ export class ReviewDatabase {
       // La colonne existe déjà, ignorer l'erreur
     }
 
+    // Ajouter les colonnes is_posted et retry_count si elles n'existent pas (migration)
+    try {
+      this.db.exec(`ALTER TABLE reviews ADD COLUMN is_posted INTEGER DEFAULT 0`);
+    } catch (error) {
+      // La colonne existe déjà, ignorer l'erreur
+    }
+
+    try {
+      this.db.exec(`ALTER TABLE reviews ADD COLUMN retry_count INTEGER DEFAULT 0`);
+    } catch (error) {
+      // La colonne existe déjà, ignorer l'erreur
+    }
+
     // Index pour améliorer les performances
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_users_discord_platform ON users(discord_id, platform);
       CREATE INDEX IF NOT EXISTS idx_reviews_user_date ON reviews(user_id, review_date DESC);
       CREATE INDEX IF NOT EXISTS idx_reviews_platform_date ON reviews(platform, review_date DESC);
+      CREATE INDEX IF NOT EXISTS idx_reviews_not_posted ON reviews(is_posted, retry_count);
     `);
   }
 
@@ -141,9 +155,17 @@ export class ReviewDatabase {
   // Méthodes pour les avis
   addReview(review: Omit<Review, 'id' | 'createdAt'>): Review | null {
     try {
+      // Utiliser INSERT OR REPLACE pour gérer les contraintes UNIQUE
       const stmt = this.db.prepare(`
-        INSERT INTO reviews (user_id, platform, game_id, movie_id, title, content, rating, cover_image, review_url, review_date, game_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO reviews (user_id, platform, game_id, movie_id, title, content, rating, cover_image, review_url, review_date, game_url, is_posted, retry_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, review_url) DO UPDATE SET
+          title = excluded.title,
+          content = excluded.content,
+          rating = excluded.rating,
+          cover_image = excluded.cover_image,
+          review_date = excluded.review_date,
+          game_url = excluded.game_url
       `);
       
       const result = stmt.run(
@@ -157,10 +179,13 @@ export class ReviewDatabase {
         review.coverImage || null,
         review.reviewUrl,
         review.reviewDate,
-        review.gameUrl || null
+        review.gameUrl || null,
+        review.isPosted ? 1 : 0,
+        review.retryCount || 0
       );
       
-      return this.getReviewById(result.lastInsertRowid as number);
+      // Récupérer l'avis (soit nouvellement inséré, soit mis à jour)
+      return this.getReviewByUserAndUrl(review.userId, review.reviewUrl);
     } catch (error) {
       console.error('Error adding review:', error);
       return null;
@@ -186,7 +211,9 @@ export class ReviewDatabase {
       reviewUrl: row.review_url,
       reviewDate: row.review_date,
       createdAt: row.created_at,
-      gameUrl: row.game_url
+      gameUrl: row.game_url,
+      isPosted: row.is_posted === 1,
+      retryCount: row.retry_count || 0
     };
   }
 
@@ -230,7 +257,9 @@ export class ReviewDatabase {
       reviewUrl: row.review_url,
       reviewDate: row.review_date,
       createdAt: row.created_at,
-      gameUrl: row.game_url
+      gameUrl: row.game_url,
+      isPosted: row.is_posted === 1,
+      retryCount: row.retry_count || 0
     };
   }
 
@@ -263,8 +292,68 @@ export class ReviewDatabase {
       reviewUrl: row.review_url,
       reviewDate: row.review_date,
       createdAt: row.created_at,
-      gameUrl: row.game_url
+      gameUrl: row.game_url,
+      isPosted: row.is_posted === 1,
+      retryCount: row.retry_count || 0
     };
+  }
+
+  // Méthodes pour gérer les avis non postés
+  getUnpostedReviews(maxRetries: number = 3): Review[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM reviews 
+      WHERE is_posted = 0 AND retry_count < ? 
+      ORDER BY created_at ASC
+    `);
+    const rows = stmt.all(maxRetries) as any[];
+    
+    return rows.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      platform: row.platform,
+      gameId: row.game_id,
+      movieId: row.movie_id,
+      title: row.title,
+      content: row.content,
+      rating: row.rating,
+      coverImage: row.cover_image,
+      reviewUrl: row.review_url,
+      reviewDate: row.review_date,
+      createdAt: row.created_at,
+      gameUrl: row.game_url,
+      isPosted: row.is_posted === 1,
+      retryCount: row.retry_count || 0
+    }));
+  }
+
+  markReviewAsPosted(reviewId: number): boolean {
+    try {
+      const stmt = this.db.prepare(`
+        UPDATE reviews 
+        SET is_posted = 1 
+        WHERE id = ?
+      `);
+      stmt.run(reviewId);
+      return true;
+    } catch (error) {
+      console.error('Error marking review as posted:', error);
+      return false;
+    }
+  }
+
+  incrementRetryCount(reviewId: number): boolean {
+    try {
+      const stmt = this.db.prepare(`
+        UPDATE reviews 
+        SET retry_count = retry_count + 1 
+        WHERE id = ?
+      `);
+      stmt.run(reviewId);
+      return true;
+    } catch (error) {
+      console.error('Error incrementing retry count:', error);
+      return false;
+    }
   }
 
   close(): void {

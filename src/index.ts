@@ -81,6 +81,17 @@ class ReviewBot {
     this.client.once('ready', async () => {
       console.log(`✅ Bot connecté en tant que ${this.client.user?.tag}`);
       
+      // Définir le statut du bot
+      this.client.user?.setPresence({
+        activities: [{
+          name: 'Galagames',
+          type: 3, // 3 = WATCHING
+          url: 'https://www.twitch.tv/galadou_'
+        }],
+        status: 'online'
+      });
+      console.log('👀 Statut défini: Watching Galagames');
+      
       // Enregistrer les commandes slash
       await this.registerSlashCommands();
       
@@ -168,11 +179,7 @@ class ReviewBot {
     try {
       console.log('🤖 Démarrage du bot JeanPascal Review Monitor...');
       
-      
-      // Enregistrer les commandes slash
-      await this.registerSlashCommands();
-      
-      // Se connecter à Discord
+      // Se connecter à Discord (les commandes seront enregistrées dans l'événement 'ready')
       await this.client.login(this.config.discordToken);
     } catch (error) {
       console.error('Erreur lors du démarrage du bot:', error);
