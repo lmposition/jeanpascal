@@ -298,6 +298,36 @@ export class ReviewDatabase {
     };
   }
 
+  getLatestReviewByUserAndPlatform(userId: number, platform: string): Review | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM reviews 
+      WHERE user_id = ? AND platform = ?
+      ORDER BY review_date DESC 
+      LIMIT 1
+    `);
+    const row = stmt.get(userId, platform) as any;
+    
+    if (!row) return null;
+    
+    return {
+      id: row.id,
+      userId: row.user_id,
+      platform: row.platform,
+      gameId: row.game_id,
+      movieId: row.movie_id,
+      title: row.title,
+      content: row.content,
+      rating: row.rating,
+      coverImage: row.cover_image,
+      reviewUrl: row.review_url,
+      reviewDate: row.review_date,
+      createdAt: row.created_at,
+      gameUrl: row.game_url,
+      isPosted: row.is_posted === 1,
+      retryCount: row.retry_count || 0
+    };
+  }
+
   // Méthodes pour gérer les avis non postés
   getUnpostedReviews(maxRetries: number = 3): Review[] {
     const stmt = this.db.prepare(`

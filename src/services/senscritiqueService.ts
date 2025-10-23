@@ -138,7 +138,15 @@ export class SensCritiqueService {
             for (const selector of contentSelectors) {
                 const contentElement = $(selector).first();
                 if (contentElement.length > 0) {
-                    const content = contentElement.text().trim();
+                    // Remplacer les <br> et </p> par des sauts de ligne avant d'extraire le texte
+                    let html = contentElement.html() || '';
+                    html = html.replace(/<br\s*\/?>/gi, '\n');
+                    html = html.replace(/<\/p>/gi, '\n');
+                    
+                    // Créer un élément temporaire avec le HTML modifié
+                    const tempElement = cheerio.load(`<div>${html}</div>`)('div');
+                    const content = tempElement.text().trim();
+                    
                     if (content && content.length > 20) { // Au moins 20 caractères
                         console.log(`✅ Contenu trouvé avec sélecteur '${selector}': ${content.length} caractères`);
                         return content;

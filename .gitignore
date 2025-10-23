@@ -146,7 +146,6 @@ Thumbs.db
 reviews.db
 
 # Compiled TypeScript
-dist/
 build/
 
 # Test files

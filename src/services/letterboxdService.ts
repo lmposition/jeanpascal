@@ -229,7 +229,10 @@ export class LetterboxdService {
             const moreLinks = element.querySelectorAll('a.reveal');
             moreLinks.forEach(link => link.remove());
             
-            return element.textContent.trim();
+            // Utiliser innerText pour préserver les sauts de ligne
+            // innerText respecte les <br> et les retours à la ligne CSS
+            const text = (element as HTMLElement).innerText || element.textContent || '';
+            return text.trim();
           }
         }
         return '';

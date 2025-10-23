@@ -145,8 +145,8 @@ export class ReviewMonitor {
         return [];
       }
 
-      // Récupérer le dernier avis en base de données
-      const latestReviewInDb = this.db.getLatestReviewByUser(user.id);
+      // Récupérer le dernier avis Steam en base de données (filtré par plateforme)
+      const latestReviewInDb = this.db.getLatestReviewByUserAndPlatform(user.id, 'steam');
       
       // Prendre le premier avis (le plus récent) de Steam
       const latestReview = reviews[0];
@@ -192,8 +192,8 @@ export class ReviewMonitor {
         return [];
       }
 
-      // Récupérer le dernier avis en base de données
-      const latestReviewInDb = this.db.getLatestReviewByUser(user.id);
+      // Récupérer le dernier avis Letterboxd en base de données (filtré par plateforme)
+      const latestReviewInDb = this.db.getLatestReviewByUserAndPlatform(user.id, 'letterboxd');
       
       // Prendre le premier avis (le plus récent) de Letterboxd
       const latestReviewOnSite = reviews[0];
@@ -249,8 +249,8 @@ export class ReviewMonitor {
         return [];
       }
 
-      // Récupérer le dernier avis en base de données
-      const latestReviewInDb = this.db.getLatestReviewByUser(user.id);
+      // Récupérer le dernier avis SensCritique en base de données (filtré par plateforme)
+      const latestReviewInDb = this.db.getLatestReviewByUserAndPlatform(user.id, 'senscritique');
       
       // Prendre le premier avis (le plus récent) de SensCritique
       const latestReviewOnSite = reviews[0];

@@ -94,8 +94,12 @@ export class SteamService {
           const isRecommended = thumbImg.includes('thumbsUp');
           const rating = isRecommended ? 1 : 0; // 1 pour recommandé (👍), 0 pour non recommandé (👎)
           
-          // Extraire le texte de l'avis depuis .content
-          const reviewText = $element.find('.content').text().trim();
+          // Extraire le texte de l'avis depuis .content en préservant les sauts de ligne
+          const contentElement = $element.find('.content');
+          let html = contentElement.html() || '';
+          html = html.replace(/<br\s*\/?>/gi, '\n');
+          html = html.replace(/<\/p>/gi, '\n');
+          const reviewText = cheerio.load(`<div>${html}</div>`)('div').text().trim();
           
           // Extraire les heures de jeu depuis .hours
           const hoursText = $element.find('.hours').text().trim();
