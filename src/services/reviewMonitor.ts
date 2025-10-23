@@ -151,12 +151,15 @@ export class ReviewMonitor {
       // Prendre le premier avis (le plus récent) de Steam
       const latestReview = reviews[0];
       
-      // Vérifier si c'est un nouvel avis
-      if (!latestReviewInDb || 
-          latestReview.title !== latestReviewInDb.title || 
-          new Date(latestReview.reviewDate).getTime() !== new Date(latestReviewInDb.reviewDate).getTime()) {
+      // Logs de debug pour comprendre la comparaison
+      console.log(`🔍 Comparaison Steam pour ${user.platformUsername}:`);
+      console.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
+      console.log(`   - Avis sur site: "${latestReview.title}" (URL: ${latestReview.reviewUrl})`);
+      
+      // Vérifier si c'est un nouvel avis en comparant l'URL (plus fiable)
+      if (!latestReviewInDb || latestReview.reviewUrl !== latestReviewInDb.reviewUrl) {
         
-        console.log(`Found new Steam review for ${user.platformUsername}: "${latestReview.title}"`);
+        console.log(`✅ Found new Steam review for ${user.platformUsername}: "${latestReview.title}"`);
         
         // Traduire le contenu si nécessaire
         let translatedReview = { ...latestReview };
@@ -201,10 +204,12 @@ export class ReviewMonitor {
       // Créer une URL unique pour l'avis
       const reviewUrl = `${latestReviewOnSite.movieUrl}#review-${user.platformUsername}-${latestReviewOnSite.reviewDate}`;
       
-      // Si pas d'avis en DB ou si le dernier avis du site est différent de celui en DB
-      if (!latestReviewInDb || 
-          latestReviewInDb.title !== latestReviewOnSite.title || 
-          latestReviewInDb.reviewDate !== latestReviewOnSite.reviewDate) {
+      console.log(`🔍 Comparaison Letterboxd pour ${user.platformUsername}:`);
+      console.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
+      console.log(`   - Avis sur site: "${latestReviewOnSite.title}" (URL: ${reviewUrl})`);
+      
+      // Si pas d'avis en DB ou si l'URL est différente
+      if (!latestReviewInDb || latestReviewInDb.reviewUrl !== reviewUrl) {
         
         console.log(`Found new Letterboxd review for ${user.platformUsername}: "${latestReviewOnSite.title}"`);
         
@@ -258,10 +263,12 @@ export class ReviewMonitor {
       console.log(`📊 Dernier avis SensCritique trouvé: "${latestReviewOnSite.title}" (${latestReviewOnSite.rating}/10)`);
       console.log(`📝 Contenu récupéré: ${latestReviewOnSite.fullReviewContent ? latestReviewOnSite.fullReviewContent.substring(0, 100) + '...' : 'VIDE'}`);
       
-      // Si pas d'avis en DB ou si le dernier avis du site est différent de celui en DB
-      if (!latestReviewInDb || 
-          latestReviewInDb.title !== latestReviewOnSite.title || 
-          latestReviewInDb.rating !== latestReviewOnSite.rating) {
+      console.log(`🔍 Comparaison SensCritique pour ${user.platformUsername}:`);
+      console.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
+      console.log(`   - Avis sur site: "${latestReviewOnSite.title}" (URL: ${latestReviewOnSite.reviewUrl})`);
+      
+      // Si pas d'avis en DB ou si l'URL est différente
+      if (!latestReviewInDb || latestReviewInDb.reviewUrl !== latestReviewOnSite.reviewUrl) {
         
         console.log(`✅ Nouvel avis SensCritique trouvé pour ${user.platformUsername}: "${latestReviewOnSite.title}"`);
         
