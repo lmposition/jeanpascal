@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, TextChannel } from 'discord.js';
 import dotenv from 'dotenv';
 import { ReviewDatabase } from './database/database.js';
 import { SteamService } from './services/steamService.js';
@@ -47,7 +47,8 @@ class ReviewBot {
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers // Pour détecter les entrées/sorties
       ]
     });
 
@@ -136,6 +137,68 @@ class ReviewBot {
 
     this.client.on('error', (error) => {
       console.error('Discord client error:', error);
+    });
+
+    // Événement: Membre rejoint le serveur
+    this.client.on('guildMemberAdd', async (member) => {
+      try {
+        const logChannelId = '1334660853034651710';
+        const logChannel = this.client.channels.cache.get(logChannelId) as TextChannel;
+        
+        if (!logChannel) {
+          console.error(`❌ Canal de logs ${logChannelId} introuvable`);
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor('#28a745') // Vert pour arrivée
+          .setTitle('👋 Nouveau membre')
+          .setDescription(`**${member.user.tag}** a rejoint le serveur !`)
+          .setThumbnail(member.user.displayAvatarURL({ size: 128 }))
+          .addFields(
+            { name: 'Utilisateur', value: `<@${member.user.id}>`, inline: true },
+            { name: 'ID', value: member.user.id, inline: true },
+            { name: 'Compte créé le', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: false }
+          )
+          .setTimestamp()
+          .setFooter({ text: `Membre #${member.guild.memberCount}` });
+
+        await logChannel.send({ embeds: [embed] });
+        console.log(`✅ ${member.user.tag} a rejoint le serveur`);
+      } catch (error) {
+        console.error('❌ Erreur lors de l\'envoi du log d\'arrivée:', error);
+      }
+    });
+
+    // Événement: Membre quitte le serveur
+    this.client.on('guildMemberRemove', async (member) => {
+      try {
+        const logChannelId = '1334660853034651710';
+        const logChannel = this.client.channels.cache.get(logChannelId) as TextChannel;
+        
+        if (!logChannel) {
+          console.error(`❌ Canal de logs ${logChannelId} introuvable`);
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor('#dc3545') // Rouge pour départ
+          .setTitle('👋 Membre parti')
+          .setDescription(`**${member.user.tag}** a quitté le serveur`)
+          .setThumbnail(member.user.displayAvatarURL({ size: 128 }))
+          .addFields(
+            { name: 'Utilisateur', value: member.user.tag, inline: true },
+            { name: 'ID', value: member.user.id, inline: true },
+            { name: 'A rejoint le', value: member.joinedAt ? `<t:${Math.floor(member.joinedTimestamp! / 1000)}:R>` : 'Inconnu', inline: false }
+          )
+          .setTimestamp()
+          .setFooter({ text: `Reste ${member.guild.memberCount} membres` });
+
+        await logChannel.send({ embeds: [embed] });
+        console.log(`✅ ${member.user.tag} a quitté le serveur`);
+      } catch (error) {
+        console.error('❌ Erreur lors de l\'envoi du log de départ:', error);
+      }
     });
 
     // Gestion propre de l'arrêt
