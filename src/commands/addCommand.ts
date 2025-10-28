@@ -76,9 +76,24 @@ export class AddCommand {
           platformUsername = profile?.personaname || username;
         }
       } else if (platform === 'letterboxd') {
-        isValid = await this.letterboxdService.isValidUsername(username);
-        platformUserId = username;
-        platformUsername = username;
+        // Extraire le username depuis l'URL si c'est un lien complet
+        // Supporte: https://letterboxd.com/username/ ou https://letterboxd.com/username/rss/ ou juste username
+        let extractedUsername = username;
+        
+        if (username.includes('letterboxd.com/')) {
+          // Extraire le username depuis l'URL
+          const match = username.match(/letterboxd\.com\/([^\/]+)/);
+          if (match) {
+            extractedUsername = match[1];
+          }
+        }
+        
+        // Supprimer /rss/ si présent
+        extractedUsername = extractedUsername.replace(/\/rss\/?$/, '').replace(/\/$/, '');
+        
+        isValid = await this.letterboxdService.isValidUsername(extractedUsername);
+        platformUserId = extractedUsername;
+        platformUsername = extractedUsername;
       } else if (platform === 'senscritique') {
         // Pour SensCritique, on considère que c'est valide si le nom d'utilisateur est fourni
         // TODO: Implémenter une vraie validation SensCritique

@@ -167,9 +167,3 @@ settings.local.json
 # Screenshots and images (if any)
 screenshots/
 images/temp/
-
-# Puppeteer cache
-.cache/puppeteer/
-
-# Chrome user data (Puppeteer)
-chrome-user-data/

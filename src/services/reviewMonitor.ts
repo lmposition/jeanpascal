@@ -211,6 +211,14 @@ export class ReviewMonitor {
       // Si pas d'avis en DB ou si l'URL est différente
       if (!latestReviewInDb || latestReviewInDb.reviewUrl !== reviewUrl) {
         
+        // Vérifier si c'est un watch simple sans texte de review
+        const hasReviewText = latestReviewOnSite.reviewText && latestReviewOnSite.reviewText.trim().length > 0;
+        
+        if (!hasReviewText) {
+          console.log(`⏭️ Watch simple sans avis pour "${latestReviewOnSite.title}", ignoré`);
+          return [];
+        }
+        
         console.log(`Found new Letterboxd review for ${user.platformUsername}: "${latestReviewOnSite.title}"`);
         
         // Traduire le contenu si nécessaire
