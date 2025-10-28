@@ -12,6 +12,7 @@ import { SeedCommand } from './commands/seedCommand.js';
 import { TMDBService } from './services/tmdbService.js';
 import { TranslationService } from './services/translationService.js';
 import { Config } from './types/index.js';
+import * as logger from './utils/logger.js';
 
 // Charger les variables d'environnement
 dotenv.config();
@@ -80,7 +81,7 @@ class ReviewBot {
 
   private setupEventHandlers(): void {
     this.client.once('ready', async () => {
-      console.log(`✅ Bot connecté en tant que ${this.client.user?.tag}`);
+      logger.log(`✅ Bot connecté en tant que ${this.client.user?.tag}`);
       
       // Définir le statut du bot
       this.client.user?.setPresence({
@@ -91,7 +92,7 @@ class ReviewBot {
         }],
         status: 'online'
       });
-      console.log('👀 Statut défini: Watching Galagames');
+      logger.log('👀 Statut défini: Watching Galagames');
       
       // Enregistrer les commandes slash
       await this.registerSlashCommands();
@@ -99,7 +100,7 @@ class ReviewBot {
       // Démarrer le moniteur de reviews
       this.reviewMonitor.start();
       
-      console.log('🚀 Bot prêt à surveiller les avis !');
+      logger.log('🚀 Bot prêt à surveiller les avis !');
     });
 
     this.client.on('interactionCreate', async (interaction) => {
@@ -123,7 +124,7 @@ class ReviewBot {
             await interaction.reply({ content: 'Commande inconnue !', ephemeral: true });
         }
       } catch (error) {
-        console.error('Error handling interaction:', error);
+        logger.error('Error handling interaction:', error);
         
         const errorMessage = 'Une erreur est survenue lors de l\'exécution de la commande.';
         
@@ -136,7 +137,7 @@ class ReviewBot {
     });
 
     this.client.on('error', (error) => {
-      console.error('Discord client error:', error);
+      logger.error('Discord client error:', error);
     });
 
     // Événement: Membre rejoint le serveur
@@ -146,7 +147,7 @@ class ReviewBot {
         const logChannel = this.client.channels.cache.get(logChannelId) as TextChannel;
         
         if (!logChannel) {
-          console.error(`❌ Canal de logs ${logChannelId} introuvable`);
+          logger.error(`❌ Canal de logs ${logChannelId} introuvable`);
           return;
         }
 
@@ -164,9 +165,9 @@ class ReviewBot {
           .setFooter({ text: `Membre #${member.guild.memberCount}` });
 
         await logChannel.send({ embeds: [embed] });
-        console.log(`✅ ${member.user.tag} a rejoint le serveur`);
+        logger.log(`✅ ${member.user.tag} a rejoint le serveur`);
       } catch (error) {
-        console.error('❌ Erreur lors de l\'envoi du log d\'arrivée:', error);
+        logger.error('❌ Erreur lors de l\'envoi du log d\'arrivée:', error);
       }
     });
 
@@ -177,7 +178,7 @@ class ReviewBot {
         const logChannel = this.client.channels.cache.get(logChannelId) as TextChannel;
         
         if (!logChannel) {
-          console.error(`❌ Canal de logs ${logChannelId} introuvable`);
+          logger.error(`❌ Canal de logs ${logChannelId} introuvable`);
           return;
         }
 
@@ -195,20 +196,20 @@ class ReviewBot {
           .setFooter({ text: `Reste ${member.guild.memberCount} membres` });
 
         await logChannel.send({ embeds: [embed] });
-        console.log(`✅ ${member.user.tag} a quitté le serveur`);
+        logger.log(`✅ ${member.user.tag} a quitté le serveur`);
       } catch (error) {
-        console.error('❌ Erreur lors de l\'envoi du log de départ:', error);
+        logger.error('❌ Erreur lors de l\'envoi du log de départ:', error);
       }
     });
 
     // Gestion propre de l'arrêt
     process.on('SIGINT', () => {
-      console.log('\n🛑 Arrêt du bot...');
+      logger.log('\n🛑 Arrêt du bot...');
       this.shutdown();
     });
 
     process.on('SIGTERM', () => {
-      console.log('\n🛑 Arrêt du bot...');
+      logger.log('\n🛑 Arrêt du bot...');
       this.shutdown();
     });
   }
@@ -224,7 +225,7 @@ class ReviewBot {
 
       const rest = new REST({ version: '10' }).setToken(this.config.discordToken);
 
-      console.log('🔄 Enregistrement des commandes slash...');
+      logger.log('🔄 Enregistrement des commandes slash...');
 
       // Enregistrer les commandes globalement
       await rest.put(
@@ -232,32 +233,32 @@ class ReviewBot {
         { body: commands }
       );
 
-      console.log('✅ Commandes slash enregistrées avec succès !');
+      logger.log('✅ Commandes slash enregistrées avec succès !');
     } catch (error) {
-      console.error('❌ Erreur lors de l\'enregistrement des commandes:', error);
+      logger.error('❌ Erreur lors de l\'enregistrement des commandes:', error);
     }
   }
 
   public async start(): Promise<void> {
     try {
-      console.log('🤖 Démarrage du bot JeanPascal Review Monitor...');
+      logger.log('🤖 Démarrage du bot JeanPascal Review Monitor...');
       
       // Se connecter à Discord (les commandes seront enregistrées dans l'événement 'ready')
       await this.client.login(this.config.discordToken);
     } catch (error) {
-      console.error('Erreur lors du démarrage du bot:', error);
+      logger.error('Erreur lors du démarrage du bot:', error);
       process.exit(1);
     }
   }
 
   private shutdown(): void {
-    console.log('🔄 Fermeture des connexions...');
+    logger.log('🔄 Fermeture des connexions...');
     
     this.reviewMonitor.stop();
     this.db.close();
     this.client.destroy();
     
-    console.log('✅ Bot arrêté proprement');
+    logger.log('✅ Bot arrêté proprement');
     process.exit(0);
   }
 }

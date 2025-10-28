@@ -118,7 +118,8 @@ export class LetterboxdService {
             reviewDate: this.formatDate(watchedDate || item.pubDate),
             coverImage: posterUrl,
             movieUrl: link,
-            reviewUrl: link
+            reviewUrl: link,
+            guid: guid // Identifiant unique de l'avis (ne change pas lors de modifications)
           };
 
           reviews.push(review);

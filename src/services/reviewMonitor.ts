@@ -7,6 +7,7 @@ import { SensCritiqueService } from './senscritiqueService.js';
 import { TMDBService } from './tmdbService.js';
 import { TranslationService } from './translationService.js';
 import { Review, User } from '../types/index.js';
+import * as logger from '../utils/logger.js';
 
 export class ReviewMonitor {
   private client: Client;
@@ -40,12 +41,12 @@ export class ReviewMonitor {
   }
 
   start(): void {
-    console.log('Starting review monitor...');
+    logger.log('Starting review monitor...');
     
     // Vérification toutes les 5 minutes
     cron.schedule('*/5 * * * *', async () => {
       if (this.isRunning) {
-        console.log('Monitor already running, skipping...');
+        logger.log('Monitor already running, skipping...');
         return;
       }
       
@@ -54,20 +55,20 @@ export class ReviewMonitor {
         await this.checkForNewReviews();
         await this.retryUnpostedReviews();
       } catch (error) {
-        console.error('Error in review monitor:', error);
+        logger.error('Error in review monitor:', error);
       } finally {
         this.isRunning = false;
       }
     });
 
-    console.log('Review monitor started (runs every 5 minutes)');
+    logger.log('Review monitor started (runs every 5 minutes)');
   }
 
   private async checkForNewReviews(): Promise<void> {
-    console.log('Checking for new reviews...');
+    logger.log('Checking for new reviews...');
     
     const users = this.db.getAllUsers();
-    console.log(`Found ${users.length} users to monitor`);
+    logger.log(`Found ${users.length} users to monitor`);
 
     for (const user of users) {
       try {
@@ -75,13 +76,13 @@ export class ReviewMonitor {
         // Délai entre chaque utilisateur pour éviter le rate limiting
         await this.delay(2000);
       } catch (error) {
-        console.error(`Error checking reviews for user ${user.platformUsername}:`, error);
+        logger.error(`Error checking reviews for user ${user.platformUsername}:`, error);
       }
     }
   }
 
   private async checkUserReviews(user: User): Promise<void> {
-    console.log(`Checking reviews for ${user.platformUsername} on ${user.platform}`);
+    logger.log(`Checking reviews for ${user.platformUsername} on ${user.platform}`);
 
     let newReviews: any[] = [];
 
@@ -114,24 +115,24 @@ export class ReviewMonitor {
         return;
       }
       
-      console.log(`🔄 Tentative de réenvoi de ${unpostedReviews.length} avis non postés...`);
+      logger.log(`🔄 Tentative de réenvoi de ${unpostedReviews.length} avis non postés...`);
       
       for (const review of unpostedReviews) {
         // Récupérer l'utilisateur associé
         const user = this.db.getUserById(review.userId);
         if (!user) {
-          console.error(`❌ Utilisateur introuvable pour l'avis ${review.id}`);
+          logger.error(`❌ Utilisateur introuvable pour l'avis ${review.id}`);
           continue;
         }
         
-        console.log(`🔄 Retry ${(review.retryCount || 0) + 1}/3 pour: ${review.title} by ${user.platformUsername}`);
+        logger.log(`🔄 Retry ${(review.retryCount || 0) + 1}/3 pour: ${review.title} by ${user.platformUsername}`);
         await this.sendReviewNotification(user, review);
         
         // Délai entre chaque tentative
         await this.delay(2000);
       }
     } catch (error) {
-      console.error('❌ Erreur lors du retry des avis non postés:', error);
+      logger.error('❌ Erreur lors du retry des avis non postés:', error);
     }
   }
 
@@ -141,7 +142,7 @@ export class ReviewMonitor {
       const reviews = await this.steamService.getUserReviews(user.platformUserId, true);
       
       if (reviews.length === 0) {
-        console.log(`No reviews found for ${user.platformUsername} on Steam`);
+        logger.log(`No reviews found for ${user.platformUsername} on Steam`);
         return [];
       }
 
@@ -152,14 +153,14 @@ export class ReviewMonitor {
       const latestReview = reviews[0];
       
       // Logs de debug pour comprendre la comparaison
-      console.log(`🔍 Comparaison Steam pour ${user.platformUsername}:`);
-      console.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
-      console.log(`   - Avis sur site: "${latestReview.title}" (URL: ${latestReview.reviewUrl})`);
+      logger.log(`🔍 Comparaison Steam pour ${user.platformUsername}:`);
+      logger.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
+      logger.log(`   - Avis sur site: "${latestReview.title}" (URL: ${latestReview.reviewUrl})`);
       
       // Vérifier si c'est un nouvel avis en comparant l'URL (plus fiable)
       if (!latestReviewInDb || latestReview.reviewUrl !== latestReviewInDb.reviewUrl) {
         
-        console.log(`✅ Found new Steam review for ${user.platformUsername}: "${latestReview.title}"`);
+        logger.log(`✅ Found new Steam review for ${user.platformUsername}: "${latestReview.title}"`);
         
         // Traduire le contenu si nécessaire
         let translatedReview = { ...latestReview };
@@ -167,11 +168,11 @@ export class ReviewMonitor {
           try {
             const translationResult = await this.translationService.translateIfNeeded(latestReview.content);
             if (translationResult.wasTranslated) {
-              console.log(`🔄 Avis Steam traduit de l'anglais vers le français`);
+              logger.log(`🔄 Avis Steam traduit de l'anglais vers le français`);
               translatedReview.content = translationResult.translatedText;
             }
           } catch (error) {
-            console.error(`❌ Erreur lors de la traduction Steam:`, error);
+            logger.error(`❌ Erreur lors de la traduction Steam:`, error);
           }
         }
         
@@ -180,7 +181,7 @@ export class ReviewMonitor {
       
       return [];
     } catch (error) {
-      console.error('Error checking Steam reviews:', error);
+      logger.error('Error checking Steam reviews:', error);
       return [];
     }
   }
@@ -191,7 +192,7 @@ export class ReviewMonitor {
       const reviews = await this.letterboxdService.getUserReviews(user.platformUsername, true);
       
       if (reviews.length === 0) {
-        console.log(`No reviews found for ${user.platformUsername} on Letterboxd`);
+        logger.log(`No reviews found for ${user.platformUsername} on Letterboxd`);
         return [];
       }
 
@@ -201,25 +202,26 @@ export class ReviewMonitor {
       // Prendre le premier avis (le plus récent) de Letterboxd
       const latestReviewOnSite = reviews[0];
       
-      // Créer une URL unique pour l'avis
-      const reviewUrl = `${latestReviewOnSite.movieUrl}#review-${user.platformUsername}-${latestReviewOnSite.reviewDate}`;
+      // Utiliser le GUID comme identifiant unique (ne change pas lors de modifications)
+      const reviewGuid = latestReviewOnSite.guid || '';
+      const reviewUrl = latestReviewOnSite.movieUrl || '';
       
-      console.log(`🔍 Comparaison Letterboxd pour ${user.platformUsername}:`);
-      console.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
-      console.log(`   - Avis sur site: "${latestReviewOnSite.title}" (URL: ${reviewUrl})`);
+      logger.log(`🔍 Comparaison Letterboxd pour ${user.platformUsername}:`);
+      logger.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (GUID: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
+      logger.log(`   - Avis sur site: "${latestReviewOnSite.title}" (GUID: ${reviewGuid})`);
       
-      // Si pas d'avis en DB ou si l'URL est différente
-      if (!latestReviewInDb || latestReviewInDb.reviewUrl !== reviewUrl) {
+      // Si pas d'avis en DB ou si le GUID est différent
+      if (!latestReviewInDb || latestReviewInDb.reviewUrl !== reviewGuid) {
         
         // Vérifier si c'est un watch simple sans texte de review
         const hasReviewText = latestReviewOnSite.reviewText && latestReviewOnSite.reviewText.trim().length > 0;
         
         if (!hasReviewText) {
-          console.log(`⏭️ Watch simple sans avis pour "${latestReviewOnSite.title}", ignoré`);
+          logger.log(`⏭️ Watch simple sans avis pour "${latestReviewOnSite.title}", ignoré`);
           return [];
         }
         
-        console.log(`Found new Letterboxd review for ${user.platformUsername}: "${latestReviewOnSite.title}"`);
+        logger.log(`Found new Letterboxd review for ${user.platformUsername}: "${latestReviewOnSite.title}"`);
         
         // Traduire le contenu si nécessaire
         let translatedContent = latestReviewOnSite.reviewText || '';
@@ -227,38 +229,38 @@ export class ReviewMonitor {
           try {
             const translationResult = await this.translationService.translateIfNeeded(translatedContent);
             if (translationResult.wasTranslated) {
-              console.log(`🔄 Avis Letterboxd traduit de l'anglais vers le français`);
+              logger.log(`🔄 Avis Letterboxd traduit de l'anglais vers le français`);
               translatedContent = translationResult.translatedText;
             }
           } catch (error) {
-            console.error(`❌ Erreur lors de la traduction Letterboxd:`, error);
+            logger.error(`❌ Erreur lors de la traduction Letterboxd:`, error);
           }
         }
         
         return [{
           ...latestReviewOnSite,
           reviewText: translatedContent,
-          reviewUrl
+          reviewUrl: reviewGuid // Stocker le GUID comme reviewUrl pour l'unicité
         }];
       }
 
-      console.log(`No new reviews for ${user.platformUsername} on Letterboxd`);
+      logger.log(`No new reviews for ${user.platformUsername} on Letterboxd`);
       return [];
     } catch (error) {
-      console.error('Error checking Letterboxd reviews:', error);
+      logger.error('Error checking Letterboxd reviews:', error);
       return [];
     }
   }
 
   private async checkSensCritiqueReviews(user: User): Promise<any[]> {
     try {
-      console.log(`🔍 Vérification des avis SensCritique pour ${user.platformUsername}...`);
+      logger.log(`🔍 Vérification des avis SensCritique pour ${user.platformUsername}...`);
       
       // Récupérer uniquement le dernier avis pour optimiser
       const reviews = await this.sensCritiqueService.getUserReviews(user.platformUsername, true);
       
       if (reviews.length === 0) {
-        console.log(`❌ Aucun avis trouvé pour ${user.platformUsername} sur SensCritique`);
+        logger.log(`❌ Aucun avis trouvé pour ${user.platformUsername} sur SensCritique`);
         return [];
       }
 
@@ -268,36 +270,36 @@ export class ReviewMonitor {
       // Prendre le premier avis (le plus récent) de SensCritique
       const latestReviewOnSite = reviews[0];
       
-      console.log(`📊 Dernier avis SensCritique trouvé: "${latestReviewOnSite.title}" (${latestReviewOnSite.rating}/10)`);
-      console.log(`📝 Contenu récupéré: ${latestReviewOnSite.fullReviewContent ? latestReviewOnSite.fullReviewContent.substring(0, 100) + '...' : 'VIDE'}`);
+      logger.log(`📊 Dernier avis SensCritique trouvé: "${latestReviewOnSite.title}" (${latestReviewOnSite.rating}/10)`);
+      logger.log(`📝 Contenu récupéré: ${latestReviewOnSite.fullReviewContent ? latestReviewOnSite.fullReviewContent.substring(0, 100) + '...' : 'VIDE'}`);
       
-      console.log(`🔍 Comparaison SensCritique pour ${user.platformUsername}:`);
-      console.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
-      console.log(`   - Avis sur site: "${latestReviewOnSite.title}" (URL: ${latestReviewOnSite.reviewUrl})`);
+      logger.log(`🔍 Comparaison SensCritique pour ${user.platformUsername}:`);
+      logger.log(`   - Avis en DB: ${latestReviewInDb ? `"${latestReviewInDb.title}" (URL: ${latestReviewInDb.reviewUrl})` : 'AUCUN'}`);
+      logger.log(`   - Avis sur site: "${latestReviewOnSite.title}" (URL: ${latestReviewOnSite.reviewUrl})`);
       
       // Si pas d'avis en DB ou si l'URL est différente
       if (!latestReviewInDb || latestReviewInDb.reviewUrl !== latestReviewOnSite.reviewUrl) {
         
-        console.log(`✅ Nouvel avis SensCritique trouvé pour ${user.platformUsername}: "${latestReviewOnSite.title}"`);
+        logger.log(`✅ Nouvel avis SensCritique trouvé pour ${user.platformUsername}: "${latestReviewOnSite.title}"`);
         
         // Utiliser le contenu complet ou un fallback informatif
         const reviewContent = latestReviewOnSite.fullReviewContent || 
                              latestReviewOnSite.content || 
                              `Avis SensCritique: ${latestReviewOnSite.rating}/10`;
         
-        console.log(`📝 Contenu final utilisé: "${reviewContent.substring(0, 100)}..."`);
+        logger.log(`📝 Contenu final utilisé: "${reviewContent.substring(0, 100)}..."`);
         
         // Enrichir avec TMDB pour l'image de couverture
-        console.log(`🎬 Enrichissement TMDB pour: "${latestReviewOnSite.title}"`);
+        logger.log(`🎬 Enrichissement TMDB pour: "${latestReviewOnSite.title}"`);
         let coverImage = latestReviewOnSite.coverImage || '';
         try {
           const tmdbImage = await this.tmdbService.getMovieImage(latestReviewOnSite.title);
           if (tmdbImage) {
             coverImage = tmdbImage;
-            console.log(`✅ Image TMDB récupérée pour "${latestReviewOnSite.title}"`);
+            logger.log(`✅ Image TMDB récupérée pour "${latestReviewOnSite.title}"`);
           }
         } catch (error) {
-          console.error(`❌ Erreur enrichissement TMDB pour "${latestReviewOnSite.title}":`, error);
+          logger.error(`❌ Erreur enrichissement TMDB pour "${latestReviewOnSite.title}":`, error);
         }
         
         // Traduire le contenu si nécessaire
@@ -306,11 +308,11 @@ export class ReviewMonitor {
           try {
             const translationResult = await this.translationService.translateIfNeeded(translatedContent);
             if (translationResult.wasTranslated) {
-              console.log(`🔄 Avis SensCritique traduit de l'anglais vers le français`);
+              logger.log(`🔄 Avis SensCritique traduit de l'anglais vers le français`);
               translatedContent = translationResult.translatedText;
             }
           } catch (error) {
-            console.error(`❌ Erreur lors de la traduction SensCritique:`, error);
+            logger.error(`❌ Erreur lors de la traduction SensCritique:`, error);
           }
         }
         
@@ -326,10 +328,10 @@ export class ReviewMonitor {
         }];
       }
 
-      console.log(`ℹ️ Pas de nouvel avis pour ${user.platformUsername} sur SensCritique`);
+      logger.log(`ℹ️ Pas de nouvel avis pour ${user.platformUsername} sur SensCritique`);
       return [];
     } catch (error) {
-      console.error(`❌ Erreur lors de la vérification des avis SensCritique pour ${user.platformUsername}:`, error);
+      logger.error(`❌ Erreur lors de la vérification des avis SensCritique pour ${user.platformUsername}:`, error);
       return [];
     }
   }
@@ -340,7 +342,7 @@ export class ReviewMonitor {
       // Pour Steam et SensCritique, content ou review contient le texte
       const content = reviewData.reviewText || reviewData.content || reviewData.review || '';
       
-      console.log(`💾 Sauvegarde avis avec contenu (${content.length} caractères): "${content.substring(0, 50)}..."`);
+      logger.log(`💾 Sauvegarde avis avec contenu (${content.length} caractères): "${content.substring(0, 50)}..."`);
       
       const review: Omit<Review, 'id' | 'createdAt'> = {
         userId: user.id,
@@ -360,18 +362,18 @@ export class ReviewMonitor {
 
       return this.db.addReview(review);
     } catch (error) {
-      console.error('Error saving review:', error);
+      logger.error('Error saving review:', error);
       return null;
     }
   }
 
   private async sendReviewNotification(user: User, review: Review): Promise<void> {
     try {
-      console.log(`📤 Envoi notification avec contenu (${review.content.length} caractères): "${review.content.substring(0, 50)}..."`);
+      logger.log(`📤 Envoi notification avec contenu (${review.content.length} caractères): "${review.content.substring(0, 50)}..."`);
       
       const channel = this.client.channels.cache.get(this.channelId) as TextChannel;
       if (!channel) {
-        console.error(`Channel ${this.channelId} not found`);
+        logger.error(`Channel ${this.channelId} not found`);
         // Incrémenter le compteur de retry
         this.db.incrementRetryCount(review.id);
         return;
@@ -390,17 +392,17 @@ export class ReviewMonitor {
       try {
         await message.react('👍');
         await message.react('👎');
-        console.log(`✅ Réactions ajoutées au message`);
+        logger.log(`✅ Réactions ajoutées au message`);
       } catch (reactionError) {
-        console.error('❌ Erreur lors de l\'ajout des réactions:', reactionError);
+        logger.error('❌ Erreur lors de l\'ajout des réactions:', reactionError);
       }
       
       // Marquer l'avis comme posté
       this.db.markReviewAsPosted(review.id);
       
-      console.log(`✅ Notification envoyée pour: ${review.title} by ${user.platformUsername}`);
+      logger.log(`✅ Notification envoyée pour: ${review.title} by ${user.platformUsername}`);
     } catch (error) {
-      console.error('❌ Erreur lors de l\'envoi de la notification:', error);
+      logger.error('❌ Erreur lors de l\'envoi de la notification:', error);
       // Incrémenter le compteur de retry en cas d'erreur
       this.db.incrementRetryCount(review.id);
     }
@@ -660,7 +662,7 @@ export class ReviewMonitor {
   }
 
   stop(): void {
-    console.log('Review monitor stopped');
+    logger.log('Review monitor stopped');
     // Note: node-cron ne fournit pas de méthode directe pour arrêter une tâche spécifique
     // Dans une implémentation plus avancée, on stockerait la référence de la tâche
   }

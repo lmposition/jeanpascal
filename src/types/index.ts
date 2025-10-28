@@ -67,6 +67,7 @@ export interface LetterboxdReview {
   coverImage: string;
   movieUrl: string;
   reviewUrl?: string; // URL de l'avis spécifique
+  guid?: string; // Identifiant unique de l'avis (ne change pas lors de modifications)
 }
 
 export interface Config {
