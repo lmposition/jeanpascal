@@ -1,4 +1,4 @@
-# JeanPascal Review Bot
+# MR Jean-Pascal Review Bot
 
 Bot Discord qui surveille et partage automatiquement les derniers avis des membres sur Steam et Letterboxd.
 
