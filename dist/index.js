@@ -13,6 +13,7 @@ import { SensCritiqueService } from './services/senscritiqueService.js';
 import { MigrateCommand } from './commands/migrateCommand.js';
 import { SeedCommand } from './commands/seedCommand.js';
 import * as followCommand from './commands/followCommand.js';
+import * as gamesCommand from './commands/gamesCommand.js';
 import { TMDBService } from './services/tmdbService.js';
 import { TranslationService } from './services/translationService.js';
 import * as logger from './utils/logger.js';
@@ -112,6 +113,9 @@ class ReviewBot {
                     case 'follow':
                         await followCommand.execute(interaction, this.gamesDb, this.igdbService);
                         break;
+                    case 'games':
+                        await gamesCommand.execute(interaction, this.gamesDb, this.igdbService);
+                        break;
                     default:
                         await interaction.reply({ content: 'Commande inconnue !', ephemeral: true });
                 }
@@ -195,7 +199,8 @@ class ReviewBot {
                 this.lastReviewCommand.getSlashCommand().toJSON(),
                 this.migrateCommand.getSlashCommand().toJSON(),
                 this.seedCommand.getSlashCommand().toJSON(),
-                followCommand.data.toJSON()
+                followCommand.data.toJSON(),
+                gamesCommand.data.toJSON()
             ];
             const rest = new REST({ version: '10' }).setToken(this.config.discordToken);
             logger.log('🔄 Enregistrement des commandes slash...');
