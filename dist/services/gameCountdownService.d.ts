@@ -13,6 +13,7 @@ export declare class GameCountdownService {
     private currentScreenshotIndex;
     private allScreenshots;
     private updateCounter;
+    private currentGameId;
     constructor(client: Client, gamesDb: GamesDatabase, igdbService: IGDBService, channelId: string);
     private formatCountdown;
     private getRandomColor;

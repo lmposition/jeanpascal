@@ -15,6 +15,7 @@ export class GameCountdownService {
   private currentScreenshotIndex: number = 0;
   private allScreenshots: string[] = [];
   private updateCounter: number = 0;
+  private currentGameId: number = 0;
 
   constructor(
     client: Client,
@@ -32,6 +33,12 @@ export class GameCountdownService {
     // Vérifier si c'est une date TBD (année 9999)
     if (releaseDate.getFullYear() >= 9999) {
       return 'TBD';
+    }
+
+    // Vérifier si c'est juste une année (1er janvier à minuit)
+    if (releaseDate.getMonth() === 0 && releaseDate.getDate() === 1 && 
+        releaseDate.getHours() === 0 && releaseDate.getMinutes() === 0) {
+      return `${releaseDate.getFullYear()}`;
     }
 
     const now = new Date();
@@ -85,10 +92,12 @@ export class GameCountdownService {
           embed.setThumbnail(gameDetails.coverUrl);
         }
         
-        // Charger tous les screenshots au premier appel ou si le jeu a changé
-        if ((this.allScreenshots.length === 0 || this.allScreenshots !== gameDetails.screenshotUrls) && gameDetails.screenshotUrls && gameDetails.screenshotUrls.length > 0) {
-          this.allScreenshots = gameDetails.screenshotUrls;
+        // Charger tous les screenshots si le jeu a changé ou au premier appel
+        if (this.currentGameId !== nextGame.igdbId) {
+          this.currentGameId = nextGame.igdbId;
+          this.allScreenshots = gameDetails.screenshotUrls || [];
           this.currentScreenshotIndex = 0;
+          logger.log(`🎬 Chargement de ${this.allScreenshots.length} screenshot(s) pour ${gameDetails.name}`);
         }
         
         // Changer de screenshot 1 sync sur 2 (toutes les 6 secondes)
