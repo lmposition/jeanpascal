@@ -1,14 +1,18 @@
 import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, TextChannel } from 'discord.js';
 import dotenv from 'dotenv';
 import { ReviewDatabase } from './database/database.js';
+import { GamesDatabase } from './database/gamesDatabase.js';
 import { SteamService } from './services/steamService.js';
 import { LetterboxdService } from './services/letterboxdService.js';
 import { ReviewMonitor } from './services/reviewMonitor.js';
+import { IGDBService } from './services/igdbService.js';
+import { GameCountdownService } from './services/gameCountdownService.js';
 import { AddCommand } from './commands/addCommand.js';
 import { LastReviewCommand } from './commands/lastReviewCommand.js';
 import { SensCritiqueService } from './services/senscritiqueService.js';
 import { MigrateCommand } from './commands/migrateCommand.js';
 import { SeedCommand } from './commands/seedCommand.js';
+import * as followCommand from './commands/followCommand.js';
 import { TMDBService } from './services/tmdbService.js';
 import { TranslationService } from './services/translationService.js';
 import { Config } from './types/index.js';
@@ -20,9 +24,12 @@ dotenv.config();
 class ReviewBot {
   private client: Client;
   private db: ReviewDatabase;
+  private gamesDb: GamesDatabase;
   private steamService: SteamService;
   private letterboxdService: LetterboxdService;
+  private igdbService: IGDBService;
   private reviewMonitor: ReviewMonitor;
+  private gameCountdownService: GameCountdownService;
   private addCommand: AddCommand;
   private lastReviewCommand: LastReviewCommand;
   private migrateCommand: MigrateCommand;
@@ -31,8 +38,8 @@ class ReviewBot {
 
   constructor() {
     // Vérifier les variables d'environnement
-    if (!process.env.DISCORD_TOKEN || !process.env.STEAM_API_KEY || !process.env.TMDB_API_KEY || !process.env.TRANSLATION_API_KEY) {
-      throw new Error('Missing required environment variables: DISCORD_TOKEN, STEAM_API_KEY, TMDB_API_KEY, TRANSLATION_API_KEY');
+    if (!process.env.DISCORD_TOKEN || !process.env.STEAM_API_KEY || !process.env.TMDB_API_KEY || !process.env.TRANSLATION_API_KEY || !process.env.IGDB_CLIENT_ID || !process.env.IGDB_ACCESS_TOKEN) {
+      throw new Error('Missing required environment variables: DISCORD_TOKEN, STEAM_API_KEY, TMDB_API_KEY, TRANSLATION_API_KEY, IGDB_CLIENT_ID, IGDB_ACCESS_TOKEN');
     }
 
     this.config = {
@@ -40,7 +47,8 @@ class ReviewBot {
       steamApiKey: process.env.STEAM_API_KEY,
       tmdbApiKey: process.env.TMDB_API_KEY,
       translationApiKey: process.env.TRANSLATION_API_KEY,
-      channelId: process.env.CHANNEL_ID || '1429538190905053326' // Canal par défaut
+      channelId: process.env.CHANNEL_ID || '1429538190905053326', // Canal par défaut
+      countdownChannelId: process.env.COUNTDOWN_CHANNEL_ID || process.env.CHANNEL_ID || '1429538190905053326'
     };
 
     // Initialiser le client Discord
@@ -55,8 +63,10 @@ class ReviewBot {
 
     // Initialiser les services
     this.db = new ReviewDatabase();
+    this.gamesDb = new GamesDatabase();
     this.steamService = new SteamService(this.config.steamApiKey);
     this.letterboxdService = new LetterboxdService(this.config.tmdbApiKey);
+    this.igdbService = new IGDBService(process.env.IGDB_CLIENT_ID!, process.env.IGDB_ACCESS_TOKEN!);
     
     // Initialiser les commandes
     this.addCommand = new AddCommand(this.db, this.steamService, this.letterboxdService, new SensCritiqueService(this.config.tmdbApiKey));
@@ -74,6 +84,14 @@ class ReviewBot {
       new TMDBService(this.config.tmdbApiKey),
       new TranslationService(this.config.translationApiKey),
       this.config.channelId
+    );
+
+    // Initialiser le service de countdown (sera démarré après la connexion)
+    this.gameCountdownService = new GameCountdownService(
+      this.client,
+      this.gamesDb,
+      this.igdbService,
+      this.config.countdownChannelId
     );
 
     this.setupEventHandlers();
@@ -100,6 +118,9 @@ class ReviewBot {
       // Démarrer le moniteur de reviews
       this.reviewMonitor.start();
       
+      // Démarrer le service de countdown
+      await this.gameCountdownService.start();
+      
       logger.log('🚀 Bot prêt à surveiller les avis !');
     });
 
@@ -119,6 +140,9 @@ class ReviewBot {
             break;
           case 'seed':
             await this.seedCommand.execute(interaction);
+            break;
+          case 'follow':
+            await followCommand.execute(interaction, this.gamesDb, this.igdbService);
             break;
           default:
             await interaction.reply({ content: 'Commande inconnue !', ephemeral: true });
@@ -220,7 +244,8 @@ class ReviewBot {
         this.addCommand.getSlashCommand().toJSON(),
         this.lastReviewCommand.getSlashCommand().toJSON(),
         this.migrateCommand.getSlashCommand().toJSON(),
-        this.seedCommand.getSlashCommand().toJSON()
+        this.seedCommand.getSlashCommand().toJSON(),
+        followCommand.data.toJSON()
       ];
 
       const rest = new REST({ version: '10' }).setToken(this.config.discordToken);
@@ -255,7 +280,9 @@ class ReviewBot {
     logger.log('🔄 Fermeture des connexions...');
     
     this.reviewMonitor.stop();
+    this.gameCountdownService.stop();
     this.db.close();
+    this.gamesDb.close();
     this.client.destroy();
     
     logger.log('✅ Bot arrêté proprement');

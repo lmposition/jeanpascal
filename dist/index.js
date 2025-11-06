@@ -1,14 +1,18 @@
 import { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } from 'discord.js';
 import dotenv from 'dotenv';
 import { ReviewDatabase } from './database/database.js';
+import { GamesDatabase } from './database/gamesDatabase.js';
 import { SteamService } from './services/steamService.js';
 import { LetterboxdService } from './services/letterboxdService.js';
 import { ReviewMonitor } from './services/reviewMonitor.js';
+import { IGDBService } from './services/igdbService.js';
+import { GameCountdownService } from './services/gameCountdownService.js';
 import { AddCommand } from './commands/addCommand.js';
 import { LastReviewCommand } from './commands/lastReviewCommand.js';
 import { SensCritiqueService } from './services/senscritiqueService.js';
 import { MigrateCommand } from './commands/migrateCommand.js';
 import { SeedCommand } from './commands/seedCommand.js';
+import * as followCommand from './commands/followCommand.js';
 import { TMDBService } from './services/tmdbService.js';
 import { TranslationService } from './services/translationService.js';
 import * as logger from './utils/logger.js';
@@ -17,9 +21,12 @@ dotenv.config();
 class ReviewBot {
     client;
     db;
+    gamesDb;
     steamService;
     letterboxdService;
+    igdbService;
     reviewMonitor;
+    gameCountdownService;
     addCommand;
     lastReviewCommand;
     migrateCommand;
@@ -27,15 +34,16 @@ class ReviewBot {
     config;
     constructor() {
         // Vérifier les variables d'environnement
-        if (!process.env.DISCORD_TOKEN || !process.env.STEAM_API_KEY || !process.env.TMDB_API_KEY || !process.env.TRANSLATION_API_KEY) {
-            throw new Error('Missing required environment variables: DISCORD_TOKEN, STEAM_API_KEY, TMDB_API_KEY, TRANSLATION_API_KEY');
+        if (!process.env.DISCORD_TOKEN || !process.env.STEAM_API_KEY || !process.env.TMDB_API_KEY || !process.env.TRANSLATION_API_KEY || !process.env.IGDB_CLIENT_ID || !process.env.IGDB_ACCESS_TOKEN) {
+            throw new Error('Missing required environment variables: DISCORD_TOKEN, STEAM_API_KEY, TMDB_API_KEY, TRANSLATION_API_KEY, IGDB_CLIENT_ID, IGDB_ACCESS_TOKEN');
         }
         this.config = {
             discordToken: process.env.DISCORD_TOKEN,
             steamApiKey: process.env.STEAM_API_KEY,
             tmdbApiKey: process.env.TMDB_API_KEY,
             translationApiKey: process.env.TRANSLATION_API_KEY,
-            channelId: process.env.CHANNEL_ID || '1429538190905053326' // Canal par défaut
+            channelId: process.env.CHANNEL_ID || '1429538190905053326', // Canal par défaut
+            countdownChannelId: process.env.COUNTDOWN_CHANNEL_ID || process.env.CHANNEL_ID || '1429538190905053326'
         };
         // Initialiser le client Discord
         this.client = new Client({
@@ -48,8 +56,10 @@ class ReviewBot {
         });
         // Initialiser les services
         this.db = new ReviewDatabase();
+        this.gamesDb = new GamesDatabase();
         this.steamService = new SteamService(this.config.steamApiKey);
         this.letterboxdService = new LetterboxdService(this.config.tmdbApiKey);
+        this.igdbService = new IGDBService(process.env.IGDB_CLIENT_ID, process.env.IGDB_ACCESS_TOKEN);
         // Initialiser les commandes
         this.addCommand = new AddCommand(this.db, this.steamService, this.letterboxdService, new SensCritiqueService(this.config.tmdbApiKey));
         this.lastReviewCommand = new LastReviewCommand(this.db, this.steamService, this.letterboxdService, new SensCritiqueService(this.config.tmdbApiKey));
@@ -57,6 +67,8 @@ class ReviewBot {
         this.seedCommand = new SeedCommand(this.db, this.steamService, this.letterboxdService, new SensCritiqueService(this.config.tmdbApiKey));
         // Initialiser le moniteur de reviews (sera démarré après la connexion)
         this.reviewMonitor = new ReviewMonitor(this.client, this.db, this.steamService, this.letterboxdService, new SensCritiqueService(this.config.tmdbApiKey), new TMDBService(this.config.tmdbApiKey), new TranslationService(this.config.translationApiKey), this.config.channelId);
+        // Initialiser le service de countdown (sera démarré après la connexion)
+        this.gameCountdownService = new GameCountdownService(this.client, this.gamesDb, this.igdbService, this.config.countdownChannelId);
         this.setupEventHandlers();
     }
     setupEventHandlers() {
@@ -76,6 +88,8 @@ class ReviewBot {
             await this.registerSlashCommands();
             // Démarrer le moniteur de reviews
             this.reviewMonitor.start();
+            // Démarrer le service de countdown
+            await this.gameCountdownService.start();
             logger.log('🚀 Bot prêt à surveiller les avis !');
         });
         this.client.on('interactionCreate', async (interaction) => {
@@ -94,6 +108,9 @@ class ReviewBot {
                         break;
                     case 'seed':
                         await this.seedCommand.execute(interaction);
+                        break;
+                    case 'follow':
+                        await followCommand.execute(interaction, this.gamesDb, this.igdbService);
                         break;
                     default:
                         await interaction.reply({ content: 'Commande inconnue !', ephemeral: true });
@@ -177,7 +194,8 @@ class ReviewBot {
                 this.addCommand.getSlashCommand().toJSON(),
                 this.lastReviewCommand.getSlashCommand().toJSON(),
                 this.migrateCommand.getSlashCommand().toJSON(),
-                this.seedCommand.getSlashCommand().toJSON()
+                this.seedCommand.getSlashCommand().toJSON(),
+                followCommand.data.toJSON()
             ];
             const rest = new REST({ version: '10' }).setToken(this.config.discordToken);
             logger.log('🔄 Enregistrement des commandes slash...');
@@ -203,7 +221,9 @@ class ReviewBot {
     shutdown() {
         logger.log('🔄 Fermeture des connexions...');
         this.reviewMonitor.stop();
+        this.gameCountdownService.stop();
         this.db.close();
+        this.gamesDb.close();
         this.client.destroy();
         logger.log('✅ Bot arrêté proprement');
         process.exit(0);

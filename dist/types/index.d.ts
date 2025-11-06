@@ -71,4 +71,5 @@ export interface Config {
     tmdbApiKey: string;
     translationApiKey: string;
     channelId: string;
+    countdownChannelId: string;
 }
