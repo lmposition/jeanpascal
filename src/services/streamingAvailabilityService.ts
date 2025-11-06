@@ -98,14 +98,14 @@ export class StreamingAvailabilityService {
     try {
       logger.log(`🔍 Recherche de "${title}" sur Streaming Availability (${country.toUpperCase()})...`);
 
-      // Recherche de films
-      const movieResponse = await axios.get(`${this.baseUrl}/shows/search/title`, {
+      // Recherche de films ET séries en une seule requête
+      const response = await axios.get(`${this.baseUrl}/shows/search/title`, {
         params: {
           title: title,
           country: country,
           series_granularity: 'show',
-          show_type: 'movie',
           output_language: 'fr'
+          // show_type non spécifié = recherche films + séries
         },
         headers: {
           'x-rapidapi-host': 'streaming-availability.p.rapidapi.com',
@@ -113,24 +113,7 @@ export class StreamingAvailabilityService {
         }
       });
 
-      // Recherche de séries
-      const seriesResponse = await axios.get(`${this.baseUrl}/shows/search/title`, {
-        params: {
-          title: title,
-          country: country,
-          series_granularity: 'show',
-          show_type: 'series',
-          output_language: 'fr'
-        },
-        headers: {
-          'x-rapidapi-host': 'streaming-availability.p.rapidapi.com',
-          'x-rapidapi-key': this.apiKey
-        }
-      });
-
-      const movies: Show[] = movieResponse.data || [];
-      const series: Show[] = seriesResponse.data || [];
-      const allResults = [...movies, ...series];
+      const allResults: Show[] = response.data || [];
 
       if (allResults.length === 0) {
         logger.log(`❌ Aucun résultat trouvé pour "${title}"`);
