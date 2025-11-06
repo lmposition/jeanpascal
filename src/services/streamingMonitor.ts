@@ -7,6 +7,8 @@ export class StreamingMonitor {
   private streamingService: StreamingAvailabilityService;
   private channelId: string = '1435854807578443776';
   private messageTimers: Map<string, NodeJS.Timeout> = new Map();
+  private userCooldowns: Map<string, number> = new Map();
+  private cooldownDuration: number = 10000; // 10 secondes
 
   constructor(client: Client, rapidApiKey: string) {
     this.client = client;
@@ -27,7 +29,33 @@ export class StreamingMonitor {
       const title = message.content.trim();
       if (!title) return;
 
-      logger.log(`📺 Recherche de streaming pour: "${title}"`);
+      // Vérifier le cooldown de l'utilisateur
+      const userId = message.author.id;
+      const now = Date.now();
+      const userLastRequest = this.userCooldowns.get(userId);
+
+      if (userLastRequest && now - userLastRequest < this.cooldownDuration) {
+        const remainingTime = Math.ceil((this.cooldownDuration - (now - userLastRequest)) / 1000);
+        
+        // Supprimer le message de l'utilisateur
+        await message.delete();
+        
+        // Envoyer un message de cooldown
+        const cooldownMsg = await message.channel.send({
+          content: `⏳ <@${userId}>, veuillez attendre ${remainingTime} seconde(s) avant de faire une nouvelle recherche.`
+        });
+
+        // Supprimer après 5 secondes
+        setTimeout(() => {
+          cooldownMsg.delete().catch(() => {});
+        }, 5000);
+        return;
+      }
+
+      // Enregistrer la requête
+      this.userCooldowns.set(userId, now);
+
+      logger.log(`📺 Recherche de streaming pour: "${title}" (utilisateur: ${message.author.tag})`);
 
       try {
         // Supprimer le message de l'utilisateur
@@ -74,72 +102,27 @@ export class StreamingMonitor {
 
   private async createStreamingEmbed(result: StreamingResult): Promise<EmbedBuilder> {
     const typeEmoji = result.type === 'movie' ? '🎬' : '📺';
-    const typeText = result.type === 'movie' ? 'Film' : 'Série';
+    
+    // Description courte et sobre
+    const shortDescription = result.overview && result.overview.length > 150 
+      ? result.overview.substring(0, 150) + '...' 
+      : result.overview || 'Aucune description disponible';
 
     const embed = new EmbedBuilder()
       .setTitle(`${typeEmoji} ${result.title}`)
-      .setDescription(result.overview || 'Aucune description disponible')
+      .setDescription(shortDescription)
       .setThumbnail(result.posterUrl)
-      .setColor('#9146FF')
-      .addFields(
-        { 
-          name: '📅 Année', 
-          value: result.year.toString(), 
-          inline: true 
-        },
-        { 
-          name: '⭐ Note', 
-          value: `${result.rating}/100`, 
-          inline: true 
-        },
-        { 
-          name: '🎭 Type', 
-          value: typeText, 
-          inline: true 
-        }
-      );
+      .setColor('#5865F2'); // Couleur Discord bleu sobre
 
-    if (result.genres.length > 0) {
-      embed.addFields({
-        name: '🎨 Genres',
-        value: result.genres.join(', '),
-        inline: false
-      });
-    }
-
-    if (result.cast.length > 0) {
-      embed.addFields({
-        name: '🎭 Casting',
-        value: result.cast.join(', '),
-        inline: false
-      });
-    }
-
-    if (result.directors && result.directors.length > 0) {
-      embed.addFields({
-        name: '🎬 Réalisateur(s)',
-        value: result.directors.join(', '),
-        inline: false
-      });
-    }
-
-    if (result.creators && result.creators.length > 0) {
-      embed.addFields({
-        name: '✍️ Créateur(s)',
-        value: result.creators.join(', '),
-        inline: false
-      });
-    }
-
-    // Ajouter les plateformes disponibles
+    // Ajouter les plateformes disponibles de manière simple
     if (result.streamingOptions.length > 0) {
       const platformsList = result.streamingOptions
+        .slice(0, 5) // Limiter à 5 plateformes
         .map(opt => {
           const typeEmoji = this.getTypeEmoji(opt.type);
-          const price = opt.price ? ` (${opt.price})` : '';
-          return `${typeEmoji} **${opt.service}**${price}`;
+          return `${typeEmoji} ${opt.service}`;
         })
-        .join('\n');
+        .join(' • ');
 
       embed.addFields({
         name: '📡 Disponible sur',
@@ -149,13 +132,12 @@ export class StreamingMonitor {
     } else {
       embed.addFields({
         name: '📡 Disponibilité',
-        value: 'Aucune plateforme de streaming trouvée',
+        value: 'Non disponible en streaming en France',
         inline: false
       });
     }
 
-    embed.setFooter({ text: 'Ce message sera supprimé dans 5 minutes' });
-    embed.setTimestamp();
+    embed.setFooter({ text: 'Suppression dans 5 min' });
 
     return embed;
   }
@@ -223,6 +205,7 @@ export class StreamingMonitor {
       clearTimeout(timer);
     }
     this.messageTimers.clear();
+    this.userCooldowns.clear();
     logger.log('🛑 Moniteur de streaming arrêté');
   }
 }

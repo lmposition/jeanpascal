@@ -94,9 +94,9 @@ export class StreamingAvailabilityService {
     this.apiKey = apiKey;
   }
 
-  async searchByTitle(title: string, country: string = 'us'): Promise<StreamingResult | null> {
+  async searchByTitle(title: string, country: string = 'fr'): Promise<StreamingResult | null> {
     try {
-      logger.log(`🔍 Recherche de "${title}" sur Streaming Availability...`);
+      logger.log(`🔍 Recherche de "${title}" sur Streaming Availability (${country.toUpperCase()})...`);
 
       // Recherche de films
       const movieResponse = await axios.get(`${this.baseUrl}/shows/search/title`, {

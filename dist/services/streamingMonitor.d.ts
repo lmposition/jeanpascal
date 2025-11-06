@@ -4,6 +4,8 @@ export declare class StreamingMonitor {
     private streamingService;
     private channelId;
     private messageTimers;
+    private userCooldowns;
+    private cooldownDuration;
     constructor(client: Client, rapidApiKey: string);
     start(): void;
     private createStreamingEmbed;
