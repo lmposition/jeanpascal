@@ -14,9 +14,12 @@ export declare class GameCountdownService {
     private allScreenshots;
     private updateCounter;
     private currentGameId;
+    private isPreReleaseMode;
     constructor(client: Client, gamesDb: GamesDatabase, igdbService: IGDBService, channelId: string);
     private formatCountdown;
     private getRandomColor;
+    private formatCountdownWithEmojis;
+    private createPreReleaseEmbed;
     private createEmbed;
     start(): Promise<void>;
     private updateCountdown;

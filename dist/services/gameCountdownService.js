@@ -13,6 +13,7 @@ export class GameCountdownService {
     allScreenshots = [];
     updateCounter = 0;
     currentGameId = 0;
+    isPreReleaseMode = false;
     constructor(client, gamesDb, igdbService, channelId) {
         this.client = client;
         this.gamesDb = gamesDb;
@@ -24,9 +25,10 @@ export class GameCountdownService {
         if (releaseDate.getFullYear() >= 9999) {
             return 'TBD';
         }
-        // Vérifier si c'est juste une année (1er janvier à minuit)
-        if (releaseDate.getMonth() === 0 && releaseDate.getDate() === 1 &&
-            releaseDate.getHours() === 0 && releaseDate.getMinutes() === 0) {
+        // Vérifier si c'est juste une année (30 ou 31 décembre = IGDB pattern)
+        // IGDB retourne le 30 ou 31/12 de l'année quand c'est juste une année
+        // Aucun jeu ne sort vraiment ces dates-là
+        if (releaseDate.getMonth() === 11 && (releaseDate.getDate() === 30 || releaseDate.getDate() === 31)) {
             return `${releaseDate.getFullYear()}`;
         }
         const now = new Date();
@@ -55,6 +57,125 @@ export class GameCountdownService {
         // Générer une couleur aléatoire en hexadécimal
         return Math.floor(Math.random() * 0xFFFFFF);
     }
+    formatCountdownWithEmojis(releaseDate) {
+        const now = new Date();
+        const diff = releaseDate.getTime() - now.getTime();
+        if (diff <= 0) {
+            return '🎉 **DISPONIBLE MAINTENANT** 🎉';
+        }
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        // ASCII art pour les chiffres
+        const asciiDigits = {
+            '0': ['███', '█ █', '█ █', '█ █', '███'],
+            '1': [' █ ', '██ ', ' █ ', ' █ ', '███'],
+            '2': ['███', '  █', '███', '█  ', '███'],
+            '3': ['███', '  █', '███', '  █', '███'],
+            '4': ['█ █', '█ █', '███', '  █', '  █'],
+            '5': ['███', '█  ', '███', '  █', '███'],
+            '6': ['███', '█  ', '███', '█ █', '███'],
+            '7': ['███', '  █', '  █', '  █', '  █'],
+            '8': ['███', '█ █', '███', '█ █', '███'],
+            '9': ['███', '█ █', '███', '  █', '███'],
+            ':': [' ', '█', ' ', '█', ' ']
+        };
+        const createAsciiNumber = (num) => {
+            const str = num.toString().padStart(2, '0');
+            const lines = ['', '', '', '', ''];
+            for (let i = 0; i < str.length; i++) {
+                const digit = str[i];
+                const ascii = asciiDigits[digit];
+                for (let line = 0; line < 5; line++) {
+                    lines[line] += ascii[line] + ' ';
+                }
+            }
+            return lines;
+        };
+        const parts = [];
+        if (hours > 0) {
+            parts.push(`⏰ **${hours}** heure${hours > 1 ? 's' : ''}\n`);
+        }
+        // Créer l'affichage ASCII MM:SS
+        const minutesAscii = createAsciiNumber(minutes);
+        const colonAscii = asciiDigits[':'];
+        const secondsAscii = createAsciiNumber(seconds);
+        const asciiLines = [];
+        for (let i = 0; i < 5; i++) {
+            asciiLines.push(minutesAscii[i] + colonAscii[i] + ' ' + secondsAscii[i]);
+        }
+        parts.push('```\n' + asciiLines.join('\n') + '\n```');
+        return parts.join('');
+    }
+    async createPreReleaseEmbed(game) {
+        const gameDetails = await this.igdbService.getGameById(game.igdbId, true);
+        const embed = new EmbedBuilder()
+            .setTitle(`🚨 ${game.name} 🚨`)
+            .setColor(this.getRandomColor()) // Couleur aléatoire
+            .setTimestamp();
+        if (gameDetails) {
+            // Cover en thumbnail
+            if (gameDetails.coverUrl) {
+                embed.setThumbnail(gameDetails.coverUrl);
+            }
+            // Charger tous les screenshots si le jeu a changé
+            if (this.currentGameId !== game.igdbId) {
+                this.currentGameId = game.igdbId;
+                this.allScreenshots = gameDetails.screenshotUrls || [];
+                this.currentScreenshotIndex = 0;
+                logger.log(`🎬 Mode pré-sortie: Chargement de ${this.allScreenshots.length} screenshot(s) pour ${gameDetails.name}`);
+            }
+            // Changer de screenshot 1 coup sur 2 en mode pré-sortie
+            if (this.updateCounter % 2 === 0 && this.allScreenshots.length > 0) {
+                this.currentScreenshotIndex = (this.currentScreenshotIndex + 1) % this.allScreenshots.length;
+            }
+            if (this.allScreenshots.length > 0) {
+                embed.setImage(this.allScreenshots[this.currentScreenshotIndex]);
+            }
+        }
+        // Countdown avec emojis (sans titre)
+        const countdown = this.formatCountdownWithEmojis(game.releaseDate);
+        embed.addFields({
+            name: '\u200B',
+            value: countdown,
+            inline: false
+        });
+        // Saut de ligne
+        embed.addFields({
+            name: '\u200B',
+            value: '\u200B',
+            inline: false
+        });
+        // Description du jeu
+        if (gameDetails && gameDetails.summary) {
+            const summary = gameDetails.summary.length > 1024
+                ? gameDetails.summary.substring(0, 1021) + '...'
+                : gameDetails.summary;
+            embed.addFields({
+                name: '📖 Description',
+                value: summary,
+                inline: false
+            });
+        }
+        // Saut de ligne après la description
+        embed.addFields({
+            name: '\u200B',
+            value: '\u200B',
+            inline: false
+        });
+        // Date de sortie
+        embed.addFields({
+            name: '📅 Date de sortie',
+            value: game.releaseDate.toLocaleString('fr-FR', {
+                dateStyle: 'full',
+                timeStyle: 'short'
+            }),
+            inline: false
+        });
+        this.updateCounter++;
+        return embed;
+    }
     async createEmbed(games) {
         const embed = new EmbedBuilder()
             .setTitle('Sorties de jeux à venir')
@@ -80,8 +201,8 @@ export class GameCountdownService {
                     this.currentScreenshotIndex = 0;
                     logger.log(`🎬 Chargement de ${this.allScreenshots.length} screenshot(s) pour ${gameDetails.name}`);
                 }
-                // Changer de screenshot 1 sync sur 2 (toutes les 6 secondes)
-                if (this.updateCounter % 2 === 0 && this.allScreenshots.length > 0) {
+                // Changer de screenshot à chaque sync
+                if (this.allScreenshots.length > 0) {
                     this.currentScreenshotIndex = (this.currentScreenshotIndex + 1) % this.allScreenshots.length;
                 }
                 // Afficher le screenshot actuel
@@ -120,8 +241,8 @@ export class GameCountdownService {
             const message = await channel.send({ embeds: [embed] });
             this.messageId = message.id;
             logger.log(`Message de countdown créé: ${this.messageId}`);
-            // Mettre à jour toutes les 3 secondes
-            this.updateInterval = setInterval(() => this.updateCountdown(), 3000);
+            // Mettre à jour toutes les 5 secondes (ou 2 secondes en mode pré-sortie)
+            this.updateInterval = setInterval(() => this.updateCountdown(), 5000);
             // Vérifier les sorties et mettre à jour les dates 2 fois par jour (toutes les 12h)
             this.checkInterval = setInterval(() => this.checkReleasesAndUpdate(), 12 * 60 * 60 * 1000);
             // Nettoyer les vieux messages de sortie toutes les heures
@@ -143,7 +264,42 @@ export class GameCountdownService {
             // Vérifier les sorties à chaque mise à jour
             await this.checkForReleasedGames();
             const games = this.gamesDb.getUpcomingGames();
-            const embed = await this.createEmbed(games);
+            // Vérifier si un jeu sort dans moins d'1 heure
+            const now = new Date();
+            const oneHourFromNow = now.getTime() + (60 * 60 * 1000);
+            const upcomingGame = games.find(game => {
+                const releaseTime = game.releaseDate.getTime();
+                return releaseTime > now.getTime() && releaseTime <= oneHourFromNow;
+            });
+            let embed;
+            if (upcomingGame) {
+                // Mode pré-sortie: embed spécial avec un seul jeu
+                embed = await this.createPreReleaseEmbed(upcomingGame);
+                // Passer en mode 2 secondes si pas déjà fait
+                if (!this.isPreReleaseMode) {
+                    this.isPreReleaseMode = true;
+                    logger.log(`🚨 Mode pré-sortie activé pour ${upcomingGame.name} - Sync à 2 secondes`);
+                    // Changer l'intervalle à 2 secondes
+                    if (this.updateInterval) {
+                        clearInterval(this.updateInterval);
+                    }
+                    this.updateInterval = setInterval(() => this.updateCountdown(), 2000);
+                }
+            }
+            else {
+                // Mode normal: embed avec tous les jeux
+                embed = await this.createEmbed(games);
+                // Revenir en mode 5 secondes si on était en mode pré-sortie
+                if (this.isPreReleaseMode) {
+                    this.isPreReleaseMode = false;
+                    logger.log('✅ Retour au mode normal - Sync à 5 secondes');
+                    // Changer l'intervalle à 5 secondes
+                    if (this.updateInterval) {
+                        clearInterval(this.updateInterval);
+                    }
+                    this.updateInterval = setInterval(() => this.updateCountdown(), 5000);
+                }
+            }
             await message.edit({ embeds: [embed] });
         }
         catch (error) {
