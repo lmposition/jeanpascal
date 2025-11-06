@@ -72,4 +72,5 @@ export interface Config {
     translationApiKey: string;
     channelId: string;
     countdownChannelId: string;
+    rapidApiKey: string;
 }

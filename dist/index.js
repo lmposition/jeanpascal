@@ -16,6 +16,7 @@ import * as followCommand from './commands/followCommand.js';
 import * as gamesCommand from './commands/gamesCommand.js';
 import { TMDBService } from './services/tmdbService.js';
 import { TranslationService } from './services/translationService.js';
+import { StreamingMonitor } from './services/streamingMonitor.js';
 import * as logger from './utils/logger.js';
 // Charger les variables d'environnement
 dotenv.config();
@@ -28,6 +29,7 @@ class ReviewBot {
     igdbService;
     reviewMonitor;
     gameCountdownService;
+    streamingMonitor;
     addCommand;
     lastReviewCommand;
     migrateCommand;
@@ -35,8 +37,8 @@ class ReviewBot {
     config;
     constructor() {
         // Vérifier les variables d'environnement
-        if (!process.env.DISCORD_TOKEN || !process.env.STEAM_API_KEY || !process.env.TMDB_API_KEY || !process.env.TRANSLATION_API_KEY || !process.env.IGDB_CLIENT_ID || !process.env.IGDB_ACCESS_TOKEN) {
-            throw new Error('Missing required environment variables: DISCORD_TOKEN, STEAM_API_KEY, TMDB_API_KEY, TRANSLATION_API_KEY, IGDB_CLIENT_ID, IGDB_ACCESS_TOKEN');
+        if (!process.env.DISCORD_TOKEN || !process.env.STEAM_API_KEY || !process.env.TMDB_API_KEY || !process.env.TRANSLATION_API_KEY || !process.env.IGDB_CLIENT_ID || !process.env.IGDB_ACCESS_TOKEN || !process.env.RAPID_KEY) {
+            throw new Error('Missing required environment variables: DISCORD_TOKEN, STEAM_API_KEY, TMDB_API_KEY, TRANSLATION_API_KEY, IGDB_CLIENT_ID, IGDB_ACCESS_TOKEN, RAPID_KEY');
         }
         this.config = {
             discordToken: process.env.DISCORD_TOKEN,
@@ -44,7 +46,8 @@ class ReviewBot {
             tmdbApiKey: process.env.TMDB_API_KEY,
             translationApiKey: process.env.TRANSLATION_API_KEY,
             channelId: process.env.CHANNEL_ID || '1429538190905053326', // Canal par défaut
-            countdownChannelId: process.env.COUNTDOWN_CHANNEL_ID || process.env.CHANNEL_ID || '1429538190905053326'
+            countdownChannelId: process.env.COUNTDOWN_CHANNEL_ID || process.env.CHANNEL_ID || '1429538190905053326',
+            rapidApiKey: process.env.RAPID_KEY
         };
         // Initialiser le client Discord
         this.client = new Client({
@@ -70,6 +73,8 @@ class ReviewBot {
         this.reviewMonitor = new ReviewMonitor(this.client, this.db, this.steamService, this.letterboxdService, new SensCritiqueService(this.config.tmdbApiKey), new TMDBService(this.config.tmdbApiKey), new TranslationService(this.config.translationApiKey), this.config.channelId);
         // Initialiser le service de countdown (sera démarré après la connexion)
         this.gameCountdownService = new GameCountdownService(this.client, this.gamesDb, this.igdbService, this.config.countdownChannelId);
+        // Initialiser le moniteur de streaming
+        this.streamingMonitor = new StreamingMonitor(this.client, this.config.rapidApiKey);
         this.setupEventHandlers();
     }
     setupEventHandlers() {
@@ -91,6 +96,8 @@ class ReviewBot {
             this.reviewMonitor.start();
             // Démarrer le service de countdown
             await this.gameCountdownService.start();
+            // Démarrer le moniteur de streaming
+            this.streamingMonitor.start();
             logger.log('🚀 Bot prêt à surveiller les avis !');
         });
         this.client.on('interactionCreate', async (interaction) => {
@@ -227,6 +234,7 @@ class ReviewBot {
         logger.log('🔄 Fermeture des connexions...');
         this.reviewMonitor.stop();
         this.gameCountdownService.stop();
+        this.streamingMonitor.stop();
         this.db.close();
         this.gamesDb.close();
         this.client.destroy();
