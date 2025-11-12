@@ -6,6 +6,7 @@ export interface TrackedGame {
   name: string;
   releaseDate: Date;
   createdAt?: string;
+  dateOverride?: boolean;
 }
 
 export class GamesDatabase {
@@ -35,6 +36,11 @@ export class GamesDatabase {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    try {
+      this.db.exec(`ALTER TABLE tracked_games ADD COLUMN date_override INTEGER DEFAULT 0`);
+    } catch (error) {
+    }
 
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_games_release_date ON tracked_games(release_date ASC);
@@ -73,7 +79,8 @@ export class GamesDatabase {
       igdbId: row.igdb_id,
       name: row.name,
       releaseDate: new Date(row.release_date),
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      dateOverride: row.date_override === 1
     };
   }
 
@@ -86,14 +93,13 @@ export class GamesDatabase {
       igdbId: row.igdb_id,
       name: row.name,
       releaseDate: new Date(row.release_date),
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      dateOverride: row.date_override === 1
     }));
   }
 
   getUpcomingGames(): TrackedGame[] {
     const now = new Date().toISOString();
-    // Récupérer tous les jeux à venir, triés par date
-    // Les jeux avec date TBD (année 9999) seront automatiquement en dernier
     const stmt = this.db.prepare('SELECT * FROM tracked_games WHERE release_date > ? ORDER BY release_date ASC');
     const rows = stmt.all(now) as any[];
     
@@ -102,7 +108,8 @@ export class GamesDatabase {
       igdbId: row.igdb_id,
       name: row.name,
       releaseDate: new Date(row.release_date),
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      dateOverride: row.date_override === 1
     }));
   }
 
@@ -116,7 +123,8 @@ export class GamesDatabase {
       igdbId: row.igdb_id,
       name: row.name,
       releaseDate: new Date(row.release_date),
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      dateOverride: row.date_override === 1
     }));
   }
 
@@ -133,11 +141,22 @@ export class GamesDatabase {
 
   updateReleaseDate(igdbId: number, releaseDate: Date): boolean {
     try {
-      const stmt = this.db.prepare('UPDATE tracked_games SET release_date = ? WHERE igdb_id = ?');
+      const stmt = this.db.prepare('UPDATE tracked_games SET release_date = ? WHERE igdb_id = ? AND date_override = 0');
       const result = stmt.run(releaseDate.toISOString(), igdbId);
       return result.changes > 0;
     } catch (error) {
       console.error('Error updating release date:', error);
+      return false;
+    }
+  }
+
+  overrideReleaseDate(igdbId: number, releaseDate: Date): boolean {
+    try {
+      const stmt = this.db.prepare('UPDATE tracked_games SET release_date = ?, date_override = 1 WHERE igdb_id = ?');
+      const result = stmt.run(releaseDate.toISOString(), igdbId);
+      return result.changes > 0;
+    } catch (error) {
+      console.error('Error overriding release date:', error);
       return false;
     }
   }

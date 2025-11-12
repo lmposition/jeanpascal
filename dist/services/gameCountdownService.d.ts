@@ -21,6 +21,7 @@ export declare class GameCountdownService {
     private formatCountdownWithEmojis;
     private createPreReleaseEmbed;
     private createEmbed;
+    private createComponentsV2Message;
     start(): Promise<void>;
     private updateCountdown;
     private checkForReleasedGames;

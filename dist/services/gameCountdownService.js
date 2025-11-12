@@ -1,4 +1,4 @@
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, MessageFlags, ContainerBuilder, MediaGalleryBuilder } from 'discord.js';
 import * as logger from '../utils/logger.js';
 export class GameCountdownService {
     client;
@@ -228,6 +228,64 @@ export class GameCountdownService {
         this.updateCounter++;
         return embed;
     }
+    async createComponentsV2Message(games) {
+        const displayGames = games.slice(0, 9);
+        const container = new ContainerBuilder()
+            .setAccentColor(this.getRandomColor());
+        if (displayGames.length === 0) {
+            container.addTextDisplayComponents(textDisplay => textDisplay.setContent("# 🎮 Aucun jeu suivi\n\nUtilisez `/follow` pour ajouter des jeux à suivre !"));
+            return {
+                components: [container],
+                flags: MessageFlags.IsComponentsV2
+            };
+        }
+        // Header
+        container.addTextDisplayComponents(textDisplay => textDisplay.setContent(`# 🎮 Compte à rebours des sorties\n*${displayGames.length} jeu(x) suivi(s)*`));
+        container.addSeparatorComponents(separator => separator);
+        // Afficher les jeux en grille de 3 par ligne
+        for (let i = 0; i < displayGames.length; i += 3) {
+            const gameBatch = displayGames.slice(i, i + 3);
+            let rowText = '';
+            gameBatch.forEach((game, batchIndex) => {
+                const globalIndex = i + batchIndex;
+                const countdown = this.formatCountdown(game.releaseDate);
+                const emoji = globalIndex === 0 ? '🔥' : '🎮';
+                // Tronquer le nom si trop long
+                const gameName = game.name.length > 20 ? game.name.substring(0, 17) + '...' : game.name;
+                rowText += `${emoji} **${gameName}**\n⏰ \`${countdown}\``;
+                // Ajouter un séparateur entre les colonnes (sauf pour le dernier)
+                if (batchIndex < gameBatch.length - 1) {
+                    rowText += '\n\n';
+                }
+            });
+            container.addTextDisplayComponents(textDisplay => textDisplay.setContent(rowText));
+            // Ajouter un separator entre les lignes (sauf pour la dernière)
+            if (i + 3 < displayGames.length) {
+                container.addSeparatorComponents(separator => separator);
+            }
+        }
+        // Récupérer les détails du premier jeu pour les screenshots
+        const nextGame = displayGames[0];
+        const gameDetails = await this.igdbService.getGameById(nextGame.igdbId, true);
+        // Media Gallery avec screenshots en bas
+        if (gameDetails && gameDetails.screenshotUrls && gameDetails.screenshotUrls.length > 0) {
+            container.addSeparatorComponents(separator => separator);
+            const mediaGallery = new MediaGalleryBuilder();
+            gameDetails.screenshotUrls.slice(0, 3).forEach((url) => {
+                mediaGallery.addItems(item => item.setURL(url));
+            });
+            container.addMediaGalleryComponents(mediaGallery);
+        }
+        // Footer
+        if (games.length > 9) {
+            container.addSeparatorComponents(separator => separator);
+            container.addTextDisplayComponents(textDisplay => textDisplay.setContent(`*+${games.length - 9} autre(s) jeu(x) suivi(s)*`));
+        }
+        return {
+            components: [container],
+            flags: MessageFlags.IsComponentsV2
+        };
+    }
     async start() {
         try {
             const channel = await this.client.channels.fetch(this.channelId);
@@ -235,10 +293,10 @@ export class GameCountdownService {
                 logger.error('Canal invalide pour le countdown');
                 return;
             }
-            // Créer le message initial
+            // Créer le message initial avec Components V2
             const games = this.gamesDb.getUpcomingGames();
-            const embed = await this.createEmbed(games);
-            const message = await channel.send({ embeds: [embed] });
+            const messageData = await this.createComponentsV2Message(games);
+            const message = await channel.send(messageData);
             this.messageId = message.id;
             logger.log(`Message de countdown créé: ${this.messageId}`);
             // Mettre à jour toutes les 5 secondes (ou 2 secondes en mode pré-sortie)
@@ -271,10 +329,11 @@ export class GameCountdownService {
                 const releaseTime = game.releaseDate.getTime();
                 return releaseTime > now.getTime() && releaseTime <= oneHourFromNow;
             });
-            let embed;
+            let messageData;
             if (upcomingGame) {
                 // Mode pré-sortie: embed spécial avec un seul jeu
-                embed = await this.createPreReleaseEmbed(upcomingGame);
+                const embed = await this.createPreReleaseEmbed(upcomingGame);
+                messageData = { embeds: [embed] };
                 // Passer en mode 2 secondes si pas déjà fait
                 if (!this.isPreReleaseMode) {
                     this.isPreReleaseMode = true;
@@ -287,8 +346,8 @@ export class GameCountdownService {
                 }
             }
             else {
-                // Mode normal: embed avec tous les jeux
-                embed = await this.createEmbed(games);
+                // Mode normal: Components V2 avec tous les jeux
+                messageData = await this.createComponentsV2Message(games);
                 // Revenir en mode 5 secondes si on était en mode pré-sortie
                 if (this.isPreReleaseMode) {
                     this.isPreReleaseMode = false;
@@ -300,7 +359,7 @@ export class GameCountdownService {
                     this.updateInterval = setInterval(() => this.updateCountdown(), 5000);
                 }
             }
-            await message.edit({ embeds: [embed] });
+            await message.edit(messageData);
         }
         catch (error) {
             logger.error('Erreur lors de la mise à jour du countdown:', error);

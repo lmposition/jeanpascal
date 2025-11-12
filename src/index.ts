@@ -14,6 +14,7 @@ import { MigrateCommand } from './commands/migrateCommand.js';
 import { SeedCommand } from './commands/seedCommand.js';
 import * as followCommand from './commands/followCommand.js';
 import * as gamesCommand from './commands/gamesCommand.js';
+import * as overwriteCommand from './commands/overwriteCommand.js';
 import { TMDBService } from './services/tmdbService.js';
 import { TranslationService } from './services/translationService.js';
 import { StreamingMonitor } from './services/streamingMonitor.js';
@@ -138,6 +139,17 @@ class ReviewBot {
     });
 
     this.client.on('interactionCreate', async (interaction) => {
+      if (interaction.isAutocomplete()) {
+        try {
+          if (interaction.commandName === 'overwrite') {
+            await overwriteCommand.autocomplete(interaction, this.gamesDb);
+          }
+        } catch (error) {
+          logger.error('Error handling autocomplete:', error);
+        }
+        return;
+      }
+
       if (!interaction.isChatInputCommand()) return;
 
       try {
@@ -159,6 +171,9 @@ class ReviewBot {
             break;
           case 'games':
             await gamesCommand.execute(interaction, this.gamesDb, this.igdbService);
+            break;
+          case 'overwrite':
+            await overwriteCommand.execute(interaction, this.gamesDb);
             break;
           default:
             await interaction.reply({ content: 'Commande inconnue !', ephemeral: true });
@@ -262,7 +277,8 @@ class ReviewBot {
         this.migrateCommand.getSlashCommand().toJSON(),
         this.seedCommand.getSlashCommand().toJSON(),
         followCommand.data.toJSON(),
-        gamesCommand.data.toJSON()
+        gamesCommand.data.toJSON(),
+        overwriteCommand.data.toJSON()
       ];
 
       const rest = new REST({ version: '10' }).setToken(this.config.discordToken);
